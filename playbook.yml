@@ -1,0 +1,69 @@
+---
+- hosts: all
+  become: yes
+  vars:
+    db_user: ansibledb
+    db_password: ansibleuser
+    db_name: ansible
+
+  tasks:
+    - name: install postgres on RHEL based distros
+      yum:
+        name: "{{ item }}"
+        state: present
+        update_cache: true
+      become: true
+      loop:
+        - postgresql
+        - postgresql-server
+        - python3
+        - python-pip
+        - python3-pip
+      when: ansible_os_family == 'RedHat'
+
+    - name: Download pip installer
+      get_url:
+        url: https://bootstrap.pypa.io/get-pip.py
+        dest: /tmp/get-pip.py
+
+    - name: Install pip
+      shell: |
+        /usr/bin/python3 /tmp/get-pip.py
+    
+    - name: Install python-postgres packages packages
+      pip: "name={{ item }}  state=present"
+      with_items:
+        - psycopg2-binary   
+    
+    - name: Initialize PostgreSQL
+      shell: "postgresql-setup initdb"
+
+    - name: Start and enable postgres services
+      service: "name={{ item }} state=started enabled=yes"
+      with_items:
+        - postgresql
+
+    - name: Create first database
+      postgresql_db:
+        state: present
+        name: "{{ db_name }}"
+      become: yes
+      become_user: postgres
+
+    - name: Create db user
+      postgresql_user:
+        state: present
+        name: "{{ db_user }}"
+        password: "{{ db_password }}"
+      become: yes
+      become_user: postgres
+
+    - name: "Grant db user access to app db"
+      postgresql_privs:
+        type: database
+        database: "{{ db_name }}"
+        roles: "{{ db_user }}"
+        grant_option: no
+        privs: all
+      become: yes
+      become_user: postgres    
